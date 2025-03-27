@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home Media Library</title>
+    <link rel="stylesheet" href="/public/css/styles.css">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>Home Media Library</h1>
+            <nav>
+                <button id="all-media-btn" class="active">All Media</button>
+                <button id="images-btn">Images</button>
+                <button id="videos-btn">Videos</button>
+                <button id="refresh-btn">Refresh Library</button>
+                <button id="upload-btn">Upload Media</button>
+            </nav>
+        </header>
+        
+        <div id="upload-modal" class="modal hidden">
+            <div class="modal-overlay"></div>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Upload Media Files</h2>
+                    <button id="close-upload-modal" class="close-modal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="drag-area">
+                        <div class="icon">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                        </div>
+                        <span class="header">Drag & Drop</span>
+                        <span class="header">or <button id="browse-files">Browse Files</button></span>
+                        <input type="file" id="file-input" hidden multiple>
+                        <span class="support">Supports: Images and Videos</span>
+                    </div>
+                    <div id="file-list" class="file-list"></div>
+                </div>
+                <div class="modal-footer">
+                    <button id="cancel-upload" class="cancel-button">Cancel</button>
+                    <button id="upload-submit" class="upload-button" disabled>Upload Files</button>
+                </div>
+            </div>
+        </div>
+        
+        <main>
+            <div id="gallery" class="gallery-container">
+                <!-- Media items will be loaded here -->
+                <div class="loading">Loading media library...</div>
+            </div>
+            
+            <div id="pagination">
+                <button id="prev-page" disabled>Previous</button>
+                <span id="page-info">Page 1</span>
+                <button id="next-page">Next</button>
+            </div>
+        </main>
+        
+        <div id="media-viewer" class="hidden">
+            <div class="viewer-content">
+                <button id="close-viewer">&times;</button>
+                <div id="media-container"></div>
+                <div class="media-info">
+                    <h3 id="media-name"></h3>
+                    <p id="media-details"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/public/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "name": "home-media-library",
+  "version": "1.0.0",
+  "description": "A home media library/browser for images and videos",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js"
+  },
+  "dependencies": {
+    "@fastify/cors": "^8.3.0",
+    "@fastify/multipart": "^7.7.0",
+    "@fastify/static": "^6.10.2",
+    "fastify": "^4.19.2",
+    "fastify-plugin": "^4.5.0",
+    "mime-types": "^2.1.35",
+    "recursive-readdir": "^2.2.3"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22"
+  }
+}
