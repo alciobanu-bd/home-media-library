@@ -17,6 +17,7 @@ let cancelUploadBtn;
 let selectedFiles = [];
 let loadMediaCallback;
 let uploadInProgress = false;
+let escKeyListener = null; // Track ESC key listener for proper removal
 
 // Initialize upload functionality
 export function init(refreshCallback) {
@@ -39,7 +40,8 @@ export function init(refreshCallback) {
     
     // Return the public API
     return {
-        openUploadModal
+        openUploadModal,
+        closeUploadModal: closeModal // Export closeModal as closeUploadModal for external access
     };
 }
 
@@ -116,6 +118,25 @@ function initEventListeners() {
 export function openUploadModal() {
     uploadModal.classList.remove('hidden');
     document.body.style.overflow = 'hidden'; // Prevent scrolling behind modal
+    
+    // Add ESC key listener when modal opens
+    if (escKeyListener) {
+        // Remove existing listener to avoid duplicates
+        document.removeEventListener('keydown', escKeyListener);
+    }
+    
+    // Create and add new ESC key listener
+    escKeyListener = function(e) {
+        if (e.key === 'Escape' || e.key === 'Esc') {
+            // Only handle ESC if the upload modal is visible
+            if (!uploadModal.classList.contains('hidden')) {
+                e.preventDefault();
+                closeModal();
+            }
+        }
+    };
+    
+    document.addEventListener('keydown', escKeyListener);
 }
 
 // Close upload modal
@@ -129,6 +150,12 @@ function closeModal() {
 
     uploadModal.classList.add('hidden');
     document.body.style.overflow = '';
+    
+    // Remove ESC key listener when modal closes
+    if (escKeyListener) {
+        document.removeEventListener('keydown', escKeyListener);
+        escKeyListener = null;
+    }
     
     // Check if any files were successfully uploaded
     const successfulUploads = document.querySelectorAll('.file-status.success');
@@ -485,6 +512,10 @@ function uploadSingleFile(formData, progressCallback) {
                 console.log('XHR response:', xhr.status, response);
                 
                 if (xhr.status >= 200 && xhr.status < 300) {
+                    // Check if thumbnail was created for logging purposes
+                    if (response.thumbnailId) {
+                        console.log(`Thumbnail created with ID: ${response.thumbnailId}`);
+                    }
                     resolve(response);
                 } else if (xhr.status === 409) {
                     // Duplicate file detected - silently use the existing file

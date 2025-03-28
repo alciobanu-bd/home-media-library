@@ -10,21 +10,50 @@ import { loadAndFillTemplate } from '../utils/template-loader.js';
  * 
  * @param {Object} item - Media item object containing metadata
  * @param {HTMLElement} container - Container element where metadata will be displayed
+ * @param {Object} fileInfo - Optional file info from the API
  */
-export async function renderMetadata(item, container) {
+export async function renderMetadata(item, container, fileInfo = null) {
     if (!item || !container) {
         console.error('Missing required parameters for renderMetadata');
         return;
     }
     
+    // Use fileInfo if provided, otherwise fall back to item
+    const effectiveInfo = fileInfo || item.fileInfo || item;
+    
     // Format basic information
-    const fileSize = formatFileSize(item.size);
-    const dateCreated = new Date(item.created || item.modified).toLocaleString();
+    const fileSize = formatFileSize(effectiveInfo.size || item.size);
+    const dateCreated = new Date(effectiveInfo.uploadDate || item.created || item.modified).toLocaleString();
     const fileType = item.type.charAt(0).toUpperCase() + item.type.slice(1);
     const extension = item.name.split('.').pop().toUpperCase();
     
     // Extract resolution information from metadata if available
-    const resolution = getResolutionString(item);
+    let resolution = null;
+    
+    // First try to get resolution from fileInfo
+    if (effectiveInfo.metadata) {
+        const metadata = effectiveInfo.metadata;
+        
+        if (metadata.width && metadata.height) {
+            resolution = `${metadata.width} × ${metadata.height}`;
+        } else if (metadata.exif) {
+            // Check various EXIF fields for dimensions
+            const exif = metadata.exif;
+            if (exif.imageWidth && exif.imageHeight) {
+                resolution = `${exif.imageWidth} × ${exif.imageHeight}`;
+            } else if (exif.PixelXDimension && exif.PixelYDimension) {
+                resolution = `${exif.PixelXDimension} × ${exif.PixelYDimension}`;
+            }
+        }
+    }
+    
+    // Fall back to item metadata if necessary
+    if (!resolution) {
+        resolution = getResolutionString(item);
+    }
+    
+    // Get file hash if available from metadata
+    const fileHash = effectiveInfo.metadata?.fileHash || 'Not available';
     
     // Prepare data for template
     const templateData = {
@@ -34,7 +63,7 @@ export async function renderMetadata(item, container) {
         fileSize: fileSize,
         dateCreated: dateCreated,
         path: item.path,
-        fileHash: item.fileHash || 'Not available',
+        fileHash: fileHash,
         resolution: resolution || 'Unknown'
     };
     
@@ -42,35 +71,32 @@ export async function renderMetadata(item, container) {
     const metadataElement = await loadAndFillTemplate('/public/templates/metadata-template.html', templateData);
     container.appendChild(metadataElement);
     
-    // Add type-specific metadata
+    // Add type-specific metadata with enhanced info
     const additionalMetadataContainer = container.querySelector('#additional-metadata');
     if (item.type === 'image') {
-        await renderImageMetadata(item, additionalMetadataContainer);
+        await renderImageMetadata(item, additionalMetadataContainer, effectiveInfo);
     } else if (item.type === 'video') {
-        await renderVideoMetadata(item, additionalMetadataContainer);
+        await renderVideoMetadata(item, additionalMetadataContainer, effectiveInfo);
     }
     
-    // If resolution wasn't in the template data but we can determine it from the DOM element
-    // for the image or video, update the resolution field
-    if (resolution === null && item.type === 'image') {
-        setTimeout(() => {
-            updateResolutionFromElement(container, 'img');
-        }, 500); // Give the image some time to load
-    } else if (resolution === null && item.type === 'video') {
-        setTimeout(() => {
-            updateResolutionFromElement(container, 'video');
-        }, 500);
-    }
+    // Remove the code that tried to get resolution from the thumbnail
+    // Never fall back to loading the full image just to determine resolution
 }
 
 /**
- * Extract resolution string from item metadata
+ * Extract resolution string from item metadata, prioritizing original dimensions
+ * Never fall back to thumbnail dimensions
  * 
  * @param {Object} item - Media item
  * @returns {string|null} - Resolution string or null if not available
  */
 function getResolutionString(item) {
     const metadata = item.metadata || {};
+    
+    // First check for original dimensions (highest priority)
+    if (metadata.originalWidth && metadata.originalHeight) {
+        return `${metadata.originalWidth} × ${metadata.originalHeight}`;
+    }
     
     // Check for explicit width and height in metadata
     if (metadata.width && metadata.height) {
@@ -137,8 +163,9 @@ function updateResolutionFromElement(container, selector) {
  * 
  * @param {Object} item - Image item
  * @param {HTMLElement} container - Container for additional metadata
+ * @param {Object} fileInfo - Optional file info from the API
  */
-async function renderImageMetadata(item, container) {
+async function renderImageMetadata(item, container, fileInfo = null) {
     const group = document.createElement('div');
     group.className = 'metadata-group';
     
@@ -146,8 +173,11 @@ async function renderImageMetadata(item, container) {
     title.textContent = 'Image Information';
     group.appendChild(title);
     
-    // Check if image has EXIF metadata
-    const metadata = item.metadata || {};
+    // Use fileInfo if provided, otherwise fall back to item
+    const effectiveInfo = fileInfo || item;
+    
+    // Check if image has EXIF metadata from either source
+    const metadata = effectiveInfo.metadata || item.metadata || {};
     const exifData = metadata.exif || {};
     
     if (Object.keys(exifData).length > 0) {
@@ -244,8 +274,9 @@ async function renderImageMetadata(item, container) {
  * 
  * @param {Object} item - Video item
  * @param {HTMLElement} container - Container for additional metadata
+ * @param {Object} fileInfo - Optional file info from the API
  */
-async function renderVideoMetadata(item, container) {
+async function renderVideoMetadata(item, container, fileInfo = null) {
     const group = document.createElement('div');
     group.className = 'metadata-group';
     
@@ -253,7 +284,10 @@ async function renderVideoMetadata(item, container) {
     title.textContent = 'Video Information';
     group.appendChild(title);
     
-    const metadata = item.metadata || {};
+    // Use fileInfo if provided, otherwise fall back to item
+    const effectiveInfo = fileInfo || item;
+    
+    const metadata = effectiveInfo.metadata || item.metadata || {};
     
     // Try to extract video metadata if available
     if (metadata.duration) {

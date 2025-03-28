@@ -9,17 +9,54 @@
     <link rel="stylesheet" href="/public/css/viewer.css">
 </head>
 <body>
+    <!-- Left sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <div class="logo-container">
+                <img src="/public/img/logo.svg" alt="Logo" class="sidebar-logo">
+                <h1>Home Media Library</h1>
+            </div>
+        </div>
+        <nav class="sidebar-nav">
+            <button id="all-media-btn" class="active" aria-label="All Media">
+                <span class="icon-wrapper all-media-icon"></span>
+                <span class="button-text">All Media</span>
+                <span class="button-label">All</span>
+            </button>
+            <button id="images-btn" aria-label="Images">
+                <span class="icon-wrapper images-icon"></span>
+                <span class="button-text">Images</span>
+                <span class="button-label">Images</span>
+            </button>
+            <button id="videos-btn" aria-label="Videos">
+                <span class="icon-wrapper videos-icon"></span>
+                <span class="button-text">Videos</span>
+                <span class="button-label">Videos</span>
+            </button>
+            <button id="upload-btn" aria-label="Upload">
+                <span class="icon-wrapper upload-icon"></span>
+                <span class="button-text">Upload</span>
+                <span class="button-label">Upload</span>
+            </button>
+        </nav>
+    </aside>
+    
+    <!-- Main content area -->
     <div id="app">
-        <header>
-            <h1>Home Media Library</h1>
-            <nav>
-                <button id="all-media-btn" class="active">All Media</button>
-                <button id="images-btn">Images</button>
-                <button id="videos-btn">Videos</button>
-                <button id="upload-btn">Upload Media</button>
-            </nav>
-        </header>
+        <main>
+            <div id="gallery" class="gallery-container">
+                <!-- Media items will be loaded here -->
+                <div class="loading">Loading media library...</div>
+            </div>
+            
+            <div id="pagination">
+                <button id="prev-page" disabled>Previous</button>
+                <span id="page-info">Page 1</span>
+                <button id="next-page">Next</button>
+            </div>
+        </main>
         
+        <!-- Upload Modal -->
         <div id="upload-modal" class="modal hidden">
             <div class="modal-overlay"></div>
             <div class="modal-content">
@@ -45,19 +82,6 @@
                 </div>
             </div>
         </div>
-        
-        <main>
-            <div id="gallery" class="gallery-container">
-                <!-- Media items will be loaded here -->
-                <div class="loading">Loading media library...</div>
-            </div>
-            
-            <div id="pagination">
-                <button id="prev-page" disabled>Previous</button>
-                <span id="page-info">Page 1</span>
-                <button id="next-page">Next</button>
-            </div>
-        </main>
         
         <div id="media-viewer" class="hidden">
             <div class="viewer-content">

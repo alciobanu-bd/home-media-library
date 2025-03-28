@@ -103,14 +103,19 @@ export function isMobileDevice() {
  * Extract resolution string from media item
  * 
  * @param {Object} item - Media item
- * @returns {string|null} - Formatted resolution or null if not available
+ * @returns {string|null} - Resolution string or null if not available
  */
 export function getMediaResolution(item) {
     if (!item) return null;
     
     // Enhanced resolution extraction logic that handles more edge cases
     
-    // First check direct properties on the item
+    // First check if resolution is directly stored
+    if (item.metadata && item.metadata.resolution) {
+        return item.metadata.resolution.replace('x', ' × ');
+    }
+    
+    // Check direct properties on the item
     if (item.width && item.height) {
         return `${item.width} × ${item.height}`;
     }
@@ -122,6 +127,11 @@ export function getMediaResolution(item) {
         // Direct width/height in metadata
         if (metadata.width && metadata.height) {
             return `${metadata.width} × ${metadata.height}`;
+        }
+        
+        // Check for original dimensions in metadata
+        if (metadata.originalWidth && metadata.originalHeight) {
+            return `${metadata.originalWidth} × ${metadata.originalHeight}`;
         }
         
         // Check EXIF data with various naming conventions

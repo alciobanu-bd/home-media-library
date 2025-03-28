@@ -34,6 +34,17 @@ export function init() {
     
     // Set up keyboard navigation
     navigationModule.setupKeyboardNavigation(openMediaViewer);
+    
+    // Add ESC key listener at the document level to ensure it works globally
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' || e.key === 'Esc') {
+            // Only close if the viewer is currently visible
+            if (mediaViewer && !mediaViewer.classList.contains('hidden')) {
+                e.preventDefault();
+                closeViewerFunction();
+            }
+        }
+    });
 }
 
 // Function to properly close the viewer
@@ -52,17 +63,31 @@ export function closeViewerFunction() {
     
     // Hide the viewer
     mediaViewer.classList.add('hidden');
+    
+    // Optional: Notify any listeners that the viewer has been closed
+    const closeEvent = new CustomEvent('viewer-closed');
+    document.dispatchEvent(closeEvent);
+}
+
+// Helper function to ensure media paths are properly formatted
+function ensureMediaPath(path) {
+    if (!path) return '';
+    
+    // The server's route is just /media/:id without additional "media" in the path
+    // So we need to make sure we don't have /media/media/:id
+    if (path.startsWith('/media/')) {
+        return path;
+    } else if (path.startsWith('/')) {
+        return `/media${path}`;
+    } else {
+        return `/media/${path}`;
+    }
 }
 
 // Open media viewer with a specific item
 export async function openMediaViewer(item, mediaItems = null, navigationContext = null) {
     mediaContainer.innerHTML = '';
     mediaMetadataPanel.innerHTML = '';
-    
-    console.log("Opening media viewer with item:", item);
-    if (mediaItems) {
-        console.log(`With navigation: ${mediaItems.length} items available`);
-    }
     
     // Store current item and all items for navigation
     mediaViewer.dataset.currentItemId = item.id;
@@ -78,11 +103,9 @@ export async function openMediaViewer(item, mediaItems = null, navigationContext
         mediaViewer.mediaItems = mediaItems;
     }
     
-    // Create metadata header container - simplified without media type icon
+    // Create metadata header container
     const metadataHeader = document.createElement('div');
     metadataHeader.className = 'metadata-header-container';
-    
-    // Add the header container to the metadata panel
     mediaMetadataPanel.appendChild(metadataHeader);
     
     // Create a header highlight element in the metadata panel
@@ -90,8 +113,11 @@ export async function openMediaViewer(item, mediaItems = null, navigationContext
     headerHighlight.className = 'metadata-header-highlight';
     mediaMetadataPanel.appendChild(headerHighlight);
     
-    // Render metadata in the side panel - this will include the item name
-    await renderMetadata(item, mediaMetadataPanel);
+    // Check if item has fileInfo data and pass it to renderMetadata
+    const fileInfo = item.fileInfo || null;
+    
+    // Render metadata in the side panel
+    await renderMetadata(item, mediaMetadataPanel, fileInfo);
     
     // Load navigation buttons from template
     const navButtons = await loadAndFillTemplate('/public/templates/navigation-buttons.html');
@@ -110,17 +136,38 @@ export async function openMediaViewer(item, mediaItems = null, navigationContext
     document.getElementById('next-media').addEventListener('click', 
         (e) => navigationModule.navigateToNextMedia(openMediaViewer, e));
     
+    // Show loading indicator before loading full-size media
+    const loadingIndicator = document.createElement('div');
+    loadingIndicator.className = 'media-loading-indicator';
+    loadingIndicator.innerHTML = '<div class="spinner"></div><span>Loading media...</span>';
+    mediaContainer.appendChild(loadingIndicator);
+    
     if (item.type === 'image') {
         const imgWrapper = document.createElement('div');
         imgWrapper.className = 'image-zoom-wrapper';
         
         const img = document.createElement('img');
+        // Now we explicitly load the full image in the viewer
         img.src = `/media${item.path}`;
         img.alt = item.name;
         img.className = 'zoomable-image';
+        img.style.opacity = '0'; // Start with invisible image
+        
+        // Add error handling for image loading failures
+        img.onerror = function() {
+            console.error(`Failed to load image: ${item.path}`);
+            this.onerror = null;
+            this.src = '/public/img/image-error.svg';
+            this.classList.add('error-image');
+            loadingIndicator.remove(); // Remove loading indicator on error
+            this.style.opacity = '1'; // Make error image visible
+        };
         
         // Add event listener to update resolution once the image loads
         img.addEventListener('load', () => {
+            loadingIndicator.remove(); // Remove loading indicator
+            img.style.opacity = '1'; // Fade in the image
+            
             const resolutionEl = mediaMetadataPanel.querySelector('.resolution-value');
             if (resolutionEl && resolutionEl.textContent === 'Unknown') {
                 resolutionEl.textContent = `${img.naturalWidth} × ${img.naturalHeight}`;
@@ -130,23 +177,101 @@ export async function openMediaViewer(item, mediaItems = null, navigationContext
         imgWrapper.appendChild(img);
         mediaContainer.appendChild(imgWrapper);
         
-        // Initialize zoom functionality without fullscreen support
+        // Initialize zoom functionality
         initializeImageZoom(img, imgWrapper);
     } else if (item.type === 'video') {
+        const videoWrapper = document.createElement('div');
+        videoWrapper.className = 'video-wrapper';
+        
         const video = document.createElement('video');
+        video.className = 'viewer-video';
         video.src = `/media${item.path}`;
         video.controls = true;
         video.autoplay = false;
+        video.playsInline = true;
+        video.preload = "metadata";
+        video.crossOrigin = "anonymous";
+        video.style.opacity = '0'; // Start with invisible video
+        
+        // Add a poster image if available
+        if (item.thumbnailId || (item.metadata && item.metadata.thumbnailId)) {
+            video.poster = `/api/thumbnails/${item.id}`;
+        } else if (item.thumbnailPath) {
+            video.poster = item.thumbnailPath;
+        }
+        
+        // Add error handling for video loading failures
+        video.onerror = function() {
+            console.error(`Failed to load video: ${item.path}, error code: ${this.error ? this.error.code : 'unknown'}`);
+            loadingIndicator.remove(); // Remove loading indicator on error
+            
+            const errorMessage = document.createElement('div');
+            errorMessage.className = 'video-error-message';
+            
+            let errorText = 'Failed to load video';
+            
+            // Provide more specific error messages
+            if (this.error) {
+                switch(this.error.code) {
+                    case 1: // MEDIA_ERR_ABORTED
+                        errorText = 'Video playback aborted';
+                        break;
+                    case 2: // MEDIA_ERR_NETWORK
+                        errorText = 'Network error occurred while loading video';
+                        break;
+                    case 3: // MEDIA_ERR_DECODE
+                        errorText = 'Video decoding failed - the format may be unsupported';
+                        break;
+                    case 4: // MEDIA_ERR_SRC_NOT_SUPPORTED
+                        errorText = 'Video format not supported by your browser';
+                        break;
+                    default:
+                        errorText = `Video error: ${this.error.message}`;
+                }
+            }
+            
+            errorMessage.textContent = errorText;
+            
+            // Try again button
+            const retryButton = document.createElement('button');
+            retryButton.className = 'video-retry-button';
+            retryButton.textContent = 'Try Again';
+            retryButton.onclick = () => {
+                // Reload the video with a fresh connection
+                const currentSrc = video.src;
+                video.src = '';
+                video.load();
+                
+                // Add a cache-busting parameter
+                const cacheBuster = `?cb=${Date.now()}`;
+                video.src = currentSrc.includes('?') ? 
+                    `${currentSrc}&cb=${Date.now()}` : 
+                    `${currentSrc}${cacheBuster}`;
+                
+                video.style.display = '';
+                errorMessage.remove();
+            };
+            
+            errorMessage.appendChild(retryButton);
+            
+            // Replace video with error message
+            videoWrapper.appendChild(errorMessage);
+            this.style.display = 'none';
+        };
         
         // Add metadata event listener to update resolution when video metadata loads
         video.addEventListener('loadedmetadata', () => {
+            loadingIndicator.remove(); // Remove loading indicator
+            video.style.opacity = '1'; // Make video visible
+            
             const resolutionEl = mediaMetadataPanel.querySelector('.resolution-value');
             if (resolutionEl && resolutionEl.textContent === 'Unknown') {
                 resolutionEl.textContent = `${video.videoWidth} × ${video.videoHeight}`;
             }
         });
         
-        mediaContainer.appendChild(video);
+        videoWrapper.appendChild(video);
+        mediaContainer.appendChild(videoWrapper);
     }
     
     mediaViewer.classList.remove('hidden');
@@ -158,7 +283,9 @@ export async function openMediaViewer(item, mediaItems = null, navigationContext
     // Add fade-out class after delay
     const hintElement = mediaViewer.querySelector('.keyboard-hints');
     setTimeout(() => {
-        hintElement.classList.add('fade-out');
+        if (hintElement) {
+            hintElement.classList.add('fade-out');
+        }
     }, 3000);
     
     // Update close button to use our closeViewerFunction

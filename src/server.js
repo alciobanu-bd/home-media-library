@@ -41,11 +41,16 @@ fastify.register(require('@fastify/static'), {
   decorateReply: true // Must be true to add sendFile to reply
 });
 
-// Register routes
-fastify.register(require('./routes/media-routes'));
+// Register all routes using the index routes file
+fastify.register(require('./routes'));
 
 // Add global error handler for streams
 fastify.addHook('onRequest', (request, reply, done) => {
+  // Add console logging for media routes to help debug 404s
+  if (request.url.startsWith('/media/')) {
+    fastify.log.info(`Media request received: ${request.url}`);
+  }
+
   // On client disconnect, handle properly to avoid incomplete streaming
   request.raw.on('close', () => {
     if (!reply.sent && !reply.raw.writableEnded) {

@@ -9,12 +9,123 @@ body {
     background-color: #f5f5f5;
     color: #333;
     line-height: 1.6;
+    display: flex; /* Use flexbox for the sidebar layout */
 }
 
+/* Sidebar styles - increased width from 220px to 260px */
+.sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 260px;
+    background-color: #fff;
+    box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+    padding: 20px 0;
+    display: flex;
+    flex-direction: column;
+    z-index: 100;
+    overflow-y: auto; /* Allow scrolling if sidebar content is too tall */
+}
+
+.sidebar-header {
+    padding: 0 15px 15px;
+    text-align: center;
+    border-bottom: 1px solid #eee;
+    margin-bottom: 20px;
+}
+
+/* New logo container styling */
+.logo-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 10px 0;
+}
+
+/* Logo styling */
+.sidebar-logo {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+}
+
+.sidebar-header h1 {
+    font-size: 1.3rem;
+    color: #333;
+    margin-bottom: 0;
+    flex: 1;
+    /* Ensure text doesn't wrap on narrow screens */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Updated sidebar navigation styles - show text next to icons */
+.sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    padding: 0 15px;
+}
+
+.sidebar-nav button {
+    width: 100%;
+    text-align: left; /* Align text to the left */
+    padding: 12px 15px; /* Horizontal padding for text alignment */
+    border: none;
+    border-radius: 8px;
+    background-color: transparent;
+    transition: all 0.2s;
+    display: flex;
+    flex-direction: row; /* Changed from column to row */
+    align-items: center; /* Vertical centering */
+    gap: 12px; /* Space between icon and text */
+    font-size: 16px;
+}
+
+.sidebar-nav button .icon-wrapper {
+    width: 24px; /* Keep icon size consistent */
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0; /* Prevent icon from shrinking */
+}
+
+.sidebar-nav button svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* Show button text in sidebar by removing the visibility constraints */
+.sidebar-nav button .button-text {
+    display: inline-block; /* Ensure the text is displayed */
+}
+
+/* Hide button-label by default (show only on mobile) */
+.sidebar-nav button .button-label {
+    display: none;
+}
+
+.sidebar-nav button:hover {
+    background-color: #f0f0f0;
+}
+
+.sidebar-nav button.active {
+    background-color: #e6f7ff;
+    color: #1890ff;
+}
+
+/* Main content container - adjusted margin to match new sidebar width */
 #app {
-    max-width: 1200px;
-    margin: 0 auto;
+    flex: 1;
+    margin-left: 260px; /* Same as sidebar width */
+    width: calc(100% - 260px);
+    max-width: 100%;
     padding: 20px;
+    min-height: 100vh;
 }
 
 header {
@@ -27,12 +138,6 @@ header {
 header h1 {
     margin-bottom: 15px;
     color: #333;
-}
-
-nav {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 20px;
 }
 
 button {
@@ -55,7 +160,7 @@ button.active {
 }
 
 .gallery-container {
-    display: block; /* Changed from grid to block to accommodate our date groups */
+    display: block;
     gap: 15px;
     margin-bottom: 20px;
 }
@@ -490,4 +595,128 @@ body.selection-mode .select-mode-btn {
     width: 16px;
     height: 16px;
     margin-right: 6px;
+}
+
+/* Mobile responsive styles - converted to bottom navigation */
+@media (max-width: 900px) {
+    body {
+        flex-direction: column;
+        padding-bottom: 70px; /* Add padding to accommodate bottom nav */
+    }
+    
+    .sidebar {
+        position: fixed;
+        width: 100%;
+        height: 60px;
+        padding: 0;
+        bottom: 0;
+        top: auto;
+        box-shadow: 0 -2px 5px rgba(0,0,0,0.1);
+        z-index: 100;
+    }
+    
+    .sidebar-header {
+        display: none; /* Hide header on mobile */
+    }
+    
+    .sidebar-nav {
+        flex-direction: row;
+        justify-content: space-around;
+        align-items: center;
+        padding: 0;
+        height: 100%;
+    }
+    
+    .sidebar-nav button {
+        width: auto;
+        flex: 1;
+        flex-direction: column; /* Stack vertically on mobile */
+        justify-content: center;
+        align-items: center;
+        gap: 4px;
+        padding: 8px 5px;
+        border-radius: 0;
+        font-size: 10px;
+        height: 100%;
+    }
+    
+    .sidebar-nav button .icon-wrapper {
+        width: 24px;
+        height: 24px;
+    }
+    
+    /* Hide button-text class on mobile */
+    .sidebar-nav button .button-text {
+        display: none;
+    }
+
+    /* Show the button-label class only on mobile */
+    .sidebar-nav button .button-label {
+        display: block;
+        font-size: 10px;
+        margin-top: 2px;
+    }
+    
+    #app {
+        margin-left: 0;
+        width: 100%;
+        padding: 15px;
+    }
+}
+
+/* Medium screen responsiveness - sidebar still visible but narrower */
+@media (min-width: 901px) and (max-width: 1200px) {
+    .sidebar {
+        width: 60px; /* Make sidebar even narrower for icon-only view */
+    }
+    
+    .sidebar-header h1 {
+        display: none; /* Hide text completely on medium screens */
+    }
+    
+    .logo-container {
+        justify-content: center;
+        padding: 10px 0;
+    }
+    
+    .sidebar-logo {
+        width: 30px; /* Slightly smaller logo on medium screens */
+        height: 30px;
+    }
+    
+    .sidebar-header {
+        padding: 10px 0;
+        margin-bottom: 15px;
+    }
+    
+    .sidebar-nav button {
+        padding: 12px 0;
+        justify-content: center; /* Center icons in narrower sidebar */
+    }
+    
+    /* Hide text on medium screens for icon-only sidebar */
+    .sidebar-nav button .button-text {
+        display: none;
+    }
+    
+    #app {
+        margin-left: 60px;
+        width: calc(100% - 60px);
+    }
+}
+
+/* Compact mobile view for the sidebar */
+@media (max-width: 600px) {
+    .sidebar-nav {
+        padding: 0 5px;
+    }
+    
+    .sidebar-nav button {
+        padding: 8px 10px;
+        font-size: 0.9rem;
+    }
+    
+    .sidebar-header h1 {
+        font-size: 1.2rem;
+    }
 }
