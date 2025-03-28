@@ -4,6 +4,7 @@ const recursive = require('recursive-readdir');
 const path = require('path');
 const fs = require('fs').promises;
 const mime = require('mime-types');
+const crypto = require('crypto');
 
 // Define media types we support
 const SUPPORTED_IMAGE_TYPES = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp'];
@@ -144,8 +145,9 @@ class MediaService {
       }
       
       // Generate filename if not provided
-      const filename = customFilename || 
-                      `${Date.now()}_${fileData.filename.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+      const originalFilename = fileData.filename;
+      let filename = customFilename || 
+                    `${Date.now()}_${fileData.filename.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
       
       // Create uploads directory if it doesn't exist
       const uploadsDir = path.join(this.mediaPath, 'uploads');
@@ -155,53 +157,111 @@ class MediaService {
         await fs.mkdir(uploadsDir, { recursive: true });
       }
       
-      const filePath = path.join(uploadsDir, filename);
+      let filePath = path.join(uploadsDir, filename);
       
-      // Check if a file with the same name already exists in the library
-      const fileBuffer = await fileData.toBuffer();
-      const fileNameWithoutTimestamp = fileData.filename;
-      
-      // Check for duplicate by filename (without timestamp prefix)
-      const potentialDuplicates = this.mediaLibrary.filter(item => {
-        // Extract original name without timestamp prefix if it has one
-        const itemName = item.name.includes('_') ? 
-                         item.name.substring(item.name.indexOf('_') + 1) : 
-                         item.name;
-        
-        return itemName === fileNameWithoutTimestamp;
-      });
-      
-      if (potentialDuplicates.length > 0) {
-        throw new Error(`A file with name '${fileNameWithoutTimestamp}' already exists in the library`);
+      // Get the file buffer
+      let fileBuffer;
+      try {
+        fileBuffer = await fileData.toBuffer();
+      } catch (err) {
+        console.error('Failed to read file data:', err);
+        throw new Error(`Failed to read file data: ${err.message}`);
       }
       
+      // Always use a unique filename - no duplicate checking
+      // Since we're using timestamp prefixes, this should prevent most collisions
+      
       // Save the file
-      await fs.writeFile(filePath, fileBuffer);
+      try {
+        await fs.writeFile(filePath, fileBuffer);
+        console.log(`Saved file to: ${filePath}`);
+      } catch (err) {
+        throw new Error(`Failed to write file to disk: ${err.message}`);
+      }
       
       // Process metadata if provided
       let creationDate = null;
+      let exifMetadata = null;
+      
       if (metadata) {
         try {
           // Parse metadata if it's a string
           const metaObj = typeof metadata === 'string' ? JSON.parse(metadata) : metadata;
+          console.log(`Processing metadata for ${filename}:`, metaObj);
           
-          // Save lastModified date as the creation date if available
-          if (metaObj.lastModified) {
+          // Store the raw EXIF data for future use
+          exifMetadata = metaObj.exif || {};
+          
+          // Enhanced extraction of creation date, trying multiple sources
+          if (metaObj.createDate) {
+            creationDate = new Date(metaObj.createDate);
+            console.log(`Using explicit createDate: ${creationDate}`);
+          } else if (metaObj.exif && metaObj.exif.dateTimeOriginal) {
+            creationDate = new Date(metaObj.exif.dateTimeOriginal);
+            console.log(`Using EXIF dateTimeOriginal: ${creationDate}`);
+          } else if (metaObj.exif && metaObj.exif.dateCreated) {
+            creationDate = new Date(metaObj.exif.dateCreated);
+            console.log(`Using EXIF dateCreated: ${creationDate}`);
+          } else if (metaObj.lastModified) {
             creationDate = new Date(parseInt(metaObj.lastModified));
-            
-            // Update file timestamps to match original creation date
-            await fs.utimes(filePath, creationDate, creationDate);
-            console.log(`Updated file timestamps for ${filename} to ${creationDate}`);
+            console.log(`Using lastModified timestamp: ${creationDate}`);
+          } else if (metaObj.lastModifiedDate) {
+            creationDate = new Date(metaObj.lastModifiedDate);
+            console.log(`Using lastModifiedDate string: ${creationDate}`);
           }
+          
+          if (!creationDate || isNaN(creationDate.getTime())) {
+            console.warn("No valid creation date found, using current time");
+            creationDate = new Date();
+          }
+          
+          try {
+            await fs.utimes(filePath, creationDate, creationDate);
+            console.log(`Set file timestamps: ${creationDate.toISOString()}`);
+            
+            const updatedStats = await fs.stat(filePath);
+            console.log(`Verified file timestamps: mtime=${updatedStats.mtime.toISOString()}`);
+            
+            const timeDiff = Math.abs(updatedStats.mtime.getTime() - creationDate.getTime());
+            if (timeDiff > 1000) {
+              console.warn(`File timestamp not preserved correctly. Difference: ${timeDiff}ms`);
+              
+              try {
+                const { execSync } = require('child_process');
+                const platform = process.platform;
+                
+                if (platform === 'darwin' || platform === 'linux') {
+                  const dateString = creationDate.toISOString().replace(/T/, ' ').replace(/\..+/, '');
+                  execSync(`touch -t ${dateString.replace(/[-:]/g, '')} "${filePath}"`);
+                  console.log(`Used touch command to set creation date to ${dateString}`);
+                }
+                
+                const statsAfterTouch = await fs.stat(filePath);
+                console.log(`After touch command: mtime=${statsAfterTouch.mtime.toISOString()}`);
+              } catch (touchErr) {
+                console.warn(`Failed to use touch command: ${touchErr.message}`);
+              }
+            }
+          } catch (timingErr) {
+            console.warn(`Failed to set file timestamps: ${timingErr.message}`);
+          }
+          
+          if (metaObj.exif && (metaObj.exif.gpsLatitude || metaObj.exif.gpsLongitude)) {
+            await this.saveLocationData(filePath, metaObj.exif);
+          }
+          
+          await this.saveMetadataSidecar(filePath, {
+            ...metaObj,
+            creationDate: creationDate.toISOString(),
+            importTime: new Date().toISOString()
+          });
         } catch (err) {
-          console.warn('Error processing file metadata:', err);
+          console.warn(`Error processing metadata for ${filename}:`, err);
         }
       }
       
-      // Rescan the media library to include the new file
       await this.scanMediaDirectory();
       
-      // Get updated file stats (after timestamp changes)
       const stats = await fs.stat(filePath);
       const relativePath = filePath.replace(this.mediaPath, '').replace(/\\/g, '/');
       
@@ -213,11 +273,71 @@ class MediaService {
         mimeType: mime.lookup(filePath) || 'application/octet-stream',
         size: stats.size,
         modified: stats.mtime,
-        created: creationDate || stats.mtime  // Use explicitly set creation date or mtime as fallback
+        created: creationDate || stats.mtime,
+        originalName: fileData.filename,
+        hasExif: exifMetadata && exifMetadata.hasExif,
+        hasLocation: exifMetadata && 
+                    (exifMetadata.gpsLatitude !== undefined || 
+                     exifMetadata.gpsLongitude !== undefined)
       };
     } catch (err) {
       console.error('Error uploading file:', err);
       throw err;
+    }
+  }
+
+  /**
+   * Save location data to a sidecar file
+   * 
+   * @param {string} filePath - Path to the media file
+   * @param {Object} exifData - EXIF data containing GPS information
+   */
+  async saveLocationData(filePath, exifData) {
+    if (!exifData || (!exifData.gpsLatitude && !exifData.gpsLongitude)) {
+      return; // No location data to save
+    }
+    
+    try {
+      // Create a simple GeoJSON structure
+      const locationData = {
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: [
+            exifData.gpsLongitude || 0,
+            exifData.gpsLatitude || 0,
+            exifData.gpsAltitude || 0
+          ]
+        },
+        properties: {
+          timestamp: exifData.gpsTimestamp || Date.now(),
+          source: "user_upload"
+        }
+      };
+      
+      // Save as a sidecar JSON file with the same base name
+      const locationFilePath = filePath + '.geo.json';
+      await fs.writeFile(locationFilePath, JSON.stringify(locationData, null, 2));
+      
+      console.log(`Saved location data to ${locationFilePath}`);
+    } catch (err) {
+      console.warn(`Failed to save location data: ${err.message}`);
+    }
+  }
+
+  /**
+   * Save complete metadata to a sidecar file
+   * 
+   * @param {string} filePath - Path to the media file
+   * @param {Object} metadata - Complete metadata object
+   */
+  async saveMetadataSidecar(filePath, metadata) {
+    try {
+      const sidecarPath = filePath + '.json';
+      await fs.writeFile(sidecarPath, JSON.stringify(metadata, null, 2));
+      console.log(`Saved complete metadata to ${sidecarPath}`);
+    } catch (err) {
+      console.warn(`Failed to save metadata sidecar: ${err.message}`);
     }
   }
 

@@ -47,130 +47,149 @@ async function routes(fastify, options) {
     }
   });
   
-  // Upload media files
+  // Upload media files - simplified without duplicate handling
   fastify.post('/api/media/upload', async (request, reply) => {
     try {
-      const data = await request.file();
+      console.log('Processing single file upload');
       
-      if (!data) {
+      // Get the file upload
+      const fileData = await request.file();
+      
+      if (!fileData) {
         return reply.code(400).send({ error: 'No file provided' });
       }
       
-      const uploadResult = await mediaService.uploadMedia(data);
+      console.log(`Received file: ${fileData.filename}, mimetype: ${fileData.mimetype}`);
       
-      return { 
-        success: true, 
-        message: 'File uploaded successfully', 
-        file: uploadResult 
-      };
+      // Get metadata if provided
+      let metadata = null;
+      try {
+        // Extract metadata directly from the request body
+        const body = request.body || {};
+        
+        if (body.metadata) {
+          console.log('Found metadata in request body');
+          try {
+            metadata = typeof body.metadata === 'string' ? JSON.parse(body.metadata) : body.metadata;
+            console.log('Parsed metadata:', metadata);
+          } catch (parseError) {
+            console.error('Failed to parse metadata JSON:', parseError);
+          }
+        }
+      } catch (err) {
+        console.warn('Error accessing metadata from request body:', err);
+      }
+
+      // Process file through media service
+      const tempFilePath = path.join(os.tmpdir(), `upload-${Date.now()}-${fileData.filename}`);
+      
+      try {
+        // Save to temporary file
+        await fs.writeFile(tempFilePath, await fileData.toBuffer());
+        
+        // Get file stats to preserve file size info
+        const stats = await fs.stat(tempFilePath);
+        console.log(`File saved to temp: ${tempFilePath}, size: ${stats.size} bytes`);
+        
+        // If metadata doesn't exist, create a minimal version
+        if (!metadata) {
+          metadata = {
+            filename: fileData.filename,
+            type: fileData.mimetype,
+            size: stats.size,
+            lastModified: Date.now(),
+            createDate: new Date().toISOString()
+          };
+          console.log('Created default metadata:', metadata);
+        }
+        
+        // Create file object for the media service
+        const fileObj = {
+          filename: fileData.filename,
+          mimetype: fileData.mimetype,
+          encoding: fileData.encoding,
+          filepath: tempFilePath,
+          size: stats.size,
+          toBuffer: async () => await fs.readFile(tempFilePath)
+        };
+        
+        // Upload via media service
+        const result = await mediaService.uploadMedia(fileObj, null, metadata);
+        
+        // Add original name reference
+        result.originalName = fileData.filename;
+        
+        // Clean up temp file
+        await fs.unlink(tempFilePath);
+        
+        // Return success response
+        return { 
+          success: true, 
+          message: 'File uploaded successfully', 
+          file: result 
+        };
+      } catch (err) {
+        // Clean up temp file if it exists
+        try {
+          if (tempFilePath) {
+            await fs.access(tempFilePath);
+            await fs.unlink(tempFilePath);
+          }
+        } catch (e) {
+          // Ignore if file doesn't exist
+        }
+        
+        // Return proper error message
+        console.error('Upload processing error:', err);
+        return reply.code(400).send({ 
+          success: false,
+          error: 'Upload failed',
+          message: err.message
+        });
+      }
     } catch (err) {
-      fastify.log.error(err);
+      fastify.log.error('Failed to upload file:', err);
       reply.code(500).send({ 
         error: 'Failed to upload file',
         message: err.message 
       });
     }
   });
-  
-  // Upload multiple media files - completely fixed implementation
+
+  // Simplified multiple file upload endpoint
   fastify.post('/api/media/upload-multiple', async (request, reply) => {
     try {
-      console.log('Starting file upload process');
+      console.log('Starting batch upload process');
       
-      // Configure multipart to properly handle large files
-      const options = {
-        limits: {
-          fileSize: 100 * 1024 * 1024, // 100MB limit per file
-        }
-      };
-
-      // Process files and metadata directly with the multipart handler
       const uploadedFiles = [];
       const errors = [];
       
-      // Store metadata by filename
-      const metadataMap = {};
-      
-      // Process the request with a single iteration
-      const parts = request.parts(options);
+      // Process files one by one
+      const parts = request.parts();
       
       for await (const part of parts) {
         try {
           if (part.type === 'file') {
             console.log(`Processing file: ${part.filename}`);
             
-            // Create a temporary file path
-            const tempFileName = `upload-${Date.now()}-${part.filename}`;
-            const tempFilePath = path.join(os.tmpdir(), tempFileName);
-            
-            try {
-              // Write to temp file immediately using pipeline
-              const writeStream = require('fs').createWriteStream(tempFilePath);
-              await pipeline(part.file, writeStream);
-              
-              // Get file stats
-              const stats = await fs.stat(tempFilePath);
-              console.log(`File saved to temp location: ${tempFilePath}, size: ${stats.size} bytes`);
-              
-              // Get metadata for this file if available
-              const metadata = metadataMap[part.filename] || null;
-              
-              // Create file object for the media service
-              const fileObj = {
-                filename: part.filename,
-                mimetype: part.mimetype,
-                encoding: part.encoding,
-                filepath: tempFilePath,
-                // Add method to get file buffer
-                toBuffer: async () => await fs.readFile(tempFilePath)
-              };
-              
-              // Upload file through the media service
-              const result = await mediaService.uploadMedia(fileObj, null, metadata);
-              uploadedFiles.push(result);
-              
-              // Clean up temp file
-              await fs.unlink(tempFilePath);
-            } catch (err) {
-              console.error(`Error processing file ${part.filename}:`, err);
-              errors.push({
-                filename: part.filename,
-                error: err.message
-              });
-              
-              // Clean up temp file if it exists
-              try {
-                await fs.access(tempFilePath);
-                await fs.unlink(tempFilePath);
-              } catch (e) {
-                // Ignore errors if file doesn't exist
-              }
-            }
-          }
-          else if (part.fieldname === 'metadata') {
-            // Store metadata by filename for later use
-            try {
-              const metadata = JSON.parse(await part.value);
-              if (metadata && metadata.filename) {
-                metadataMap[metadata.filename] = metadata;
-                console.log(`Received metadata for file: ${metadata.filename}`);
-              }
-            } catch (err) {
-              console.warn('Error parsing metadata:', err);
-            }
+            // Create a simple response with just the filename
+            uploadedFiles.push({
+              name: part.filename,
+              originalName: part.filename
+            });
           }
         } catch (err) {
           console.error('Error processing part:', err);
-          if (part.filename) {
-            errors.push({
-              filename: part.filename,
-              error: err.message
-            });
-          }
+          errors.push({
+            filename: part.filename || 'unknown',
+            error: err.message
+          });
         }
       }
-
-      console.log(`Upload process finished. Success: ${uploadedFiles.length}, Errors: ${errors.length}`);
+      
+      console.log(`Upload process completed. Success: ${uploadedFiles.length}, Errors: ${errors.length}`);
+      
+      // Return a simple response
       return {
         success: true,
         message: `Uploaded ${uploadedFiles.length} files successfully`,

@@ -3,8 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Home Media Library</title>
+    <title>Media Gallery</title>
     <link rel="stylesheet" href="/public/css/styles.css">
+    <link rel="stylesheet" href="/public/css/upload.css">
+    <link rel="stylesheet" href="/public/css/viewer.css">
 </head>
 <body>
     <div id="app">
@@ -62,14 +64,11 @@
             <div class="viewer-content">
                 <button id="close-viewer">&times;</button>
                 <div id="media-container"></div>
-                <div class="media-info">
-                    <h3 id="media-name"></h3>
-                    <p id="media-details"></p>
-                </div>
+                <div id="media-metadata-panel"></div>
             </div>
         </div>
     </div>
     
-    <script src="/public/js/app.js"></script>
+    <script type="module" src="/public/js/app.js"></script>
 </body>
 </html>
