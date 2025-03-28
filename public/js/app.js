@@ -13,7 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const allMediaBtn = document.getElementById('all-media-btn');
     const imagesBtn = document.getElementById('images-btn');
     const videosBtn = document.getElementById('videos-btn');
-    const refreshBtn = document.getElementById('refresh-btn');
     const uploadBtn = document.getElementById('upload-btn');
     const prevPageBtn = document.getElementById('prev-page');
     const nextPageBtn = document.getElementById('next-page');
@@ -179,6 +178,25 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Pass all media items of the current date and navigation context
         viewerModule.openMediaViewer(item, window.mediaByDateMap[dateKey], navigationContext);
+
+        // If path lookup failed, try base64 encoding
+        try {
+            if (item.type === 'image') {
+                const img = document.createElement('img');
+                img.src = fixMediaPath(item.path); // Fix the path here
+                img.alt = item.name;
+                img.className = 'zoomable-image';
+            
+                imgWrapper.appendChild(img);
+            } else if (item.type === 'video') {
+                const video = document.createElement('video');
+                video.src = fixMediaPath(item.path); // Fix the path here 
+                video.controls = true;
+                video.autoplay = false;
+            }
+        } catch (b64Err) {
+            console.error(`Base64 lookup failed for ${item.path}: ${b64Err.message}`);
+        }
     }
 
     // Update pagination controls
@@ -214,23 +232,6 @@ document.addEventListener('DOMContentLoaded', () => {
         imagesBtn.classList.remove('active');
         videosBtn.classList.add('active');
         loadMedia();
-    });
-    
-    refreshBtn.addEventListener('click', async () => {
-        try {
-            refreshBtn.disabled = true;
-            refreshBtn.textContent = 'Refreshing...';
-            
-            await fetch('/api/media/rescan', { method: 'POST' });
-            
-            loadMedia();
-        } catch (error) {
-            console.error('Failed to refresh media library:', error);
-            alert('Failed to refresh media library. Please try again.');
-        } finally {
-            refreshBtn.disabled = false;
-            refreshBtn.textContent = 'Refresh Library';
-        }
     });
     
     prevPageBtn.addEventListener('click', () => {
@@ -407,6 +408,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         exitSelectionMode();
+    }
+
+    /**
+     * Helper function to fix media paths in the view
+     * @param {string} path - The original path from the API 
+     * @returns {string} - The fixed path for proper display
+     */
+    function fixMediaPath(path) {
+        // If path doesn't start with /media, add it to ensure compatibility
+        if (!path.startsWith('/media')) {
+            return `/media${path}`;
+        }
+        return path;
     }
 
     // Initial load

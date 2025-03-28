@@ -35,19 +35,8 @@ async function routes(fastify, options) {
       reply.code(500).send({ error: 'Failed to fetch media' });
     }
   });
-
-  // Force rescan of the media directory
-  fastify.post('/api/media/rescan', async (request, reply) => {
-    try {
-      await mediaService.refreshMediaLibrary();
-      return { success: true, message: 'Media library refreshed', count: mediaService.mediaLibrary.length };
-    } catch (err) {
-      fastify.log.error(err);
-      reply.code(500).send({ error: 'Failed to refresh media library' });
-    }
-  });
   
-  // Upload media files - simplified without duplicate handling
+  // Upload media files with duplicate detection
   fastify.post('/api/media/upload', async (request, reply) => {
     try {
       console.log('Processing single file upload');
@@ -61,8 +50,9 @@ async function routes(fastify, options) {
       
       console.log(`Received file: ${fileData.filename}, mimetype: ${fileData.mimetype}`);
       
-      // Get metadata if provided
+      // Get metadata
       let metadata = null;
+      
       try {
         // Extract metadata directly from the request body
         const body = request.body || {};
@@ -81,46 +71,31 @@ async function routes(fastify, options) {
       }
 
       // Process file through media service
-      const tempFilePath = path.join(os.tmpdir(), `upload-${Date.now()}-${fileData.filename}`);
-      
       try {
-        // Save to temporary file
-        await fs.writeFile(tempFilePath, await fileData.toBuffer());
-        
-        // Get file stats to preserve file size info
-        const stats = await fs.stat(tempFilePath);
-        console.log(`File saved to temp: ${tempFilePath}, size: ${stats.size} bytes`);
-        
-        // If metadata doesn't exist, create a minimal version
-        if (!metadata) {
-          metadata = {
-            filename: fileData.filename,
-            type: fileData.mimetype,
-            size: stats.size,
-            lastModified: Date.now(),
-            createDate: new Date().toISOString()
-          };
-          console.log('Created default metadata:', metadata);
-        }
-        
         // Create file object for the media service
         const fileObj = {
           filename: fileData.filename,
           mimetype: fileData.mimetype,
           encoding: fileData.encoding,
-          filepath: tempFilePath,
-          size: stats.size,
-          toBuffer: async () => await fs.readFile(tempFilePath)
+          size: fileData.file.bytesRead,
+          toBuffer: async () => await fileData.toBuffer()
         };
         
-        // Upload via media service
+        // Upload to MongoDB via media service - always check for duplicates
         const result = await mediaService.uploadMedia(fileObj, null, metadata);
+        
+        // If duplicate was detected, return it with 409 status but provide all info needed
+        if (result.isDuplicate) {
+          return reply.code(409).send({
+            success: false,
+            error: 'Duplicate file',
+            message: result.message,
+            duplicate: result.duplicateOf
+          });
+        }
         
         // Add original name reference
         result.originalName = fileData.filename;
-        
-        // Clean up temp file
-        await fs.unlink(tempFilePath);
         
         // Return success response
         return { 
@@ -129,16 +104,6 @@ async function routes(fastify, options) {
           file: result 
         };
       } catch (err) {
-        // Clean up temp file if it exists
-        try {
-          if (tempFilePath) {
-            await fs.access(tempFilePath);
-            await fs.unlink(tempFilePath);
-          }
-        } catch (e) {
-          // Ignore if file doesn't exist
-        }
-        
         // Return proper error message
         console.error('Upload processing error:', err);
         return reply.code(400).send({ 
@@ -226,8 +191,101 @@ async function routes(fastify, options) {
     }
   });
 
+  // Serve media files from MongoDB GridFS - improved error handling with fix for double media path
+  fastify.get('/media/:id', async (request, reply) => {
+    try {
+      const { id } = request.params;
+      
+      // Check if id is a valid MongoDB ObjectID
+      if (!/^[0-9a-fA-F]{24}$/.test(id)) {
+        fastify.log.warn(`Invalid media ID format: ${id}`);
+        return reply.code(404).send({ error: 'Invalid media ID format' });
+      }
+      
+      try {
+        // Get media stream from service
+        const mediaData = await mediaService.getMediaStream(id);
+        
+        // Set content type based on the file
+        reply.header('Content-Type', mediaData.contentType);
+        
+        // Set cache headers for better performance
+        reply.header('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
+        
+        // Stream the file directly to the response
+        return reply.send(mediaData.stream);
+      } catch (err) {
+        if (err.message && err.message.includes('not found')) {
+          fastify.log.warn(`Media file not found: ${id}`);
+          return reply.code(404).send({ error: 'Media file not found' });
+        }
+        throw err;
+      }
+    } catch (err) {
+      fastify.log.error(`Failed to fetch media file ${request.params.id}:`, err);
+      reply.code(500).send({ error: 'Internal server error while fetching media' });
+    }
+  });
+
+  // Add path handling for file URLs that include path segments - improved error handling
+  fastify.get('/media/*', async (request, reply) => {
+    try {
+      // Extract the path from the URL
+      const urlPath = request.url.replace('/media/', '');
+      
+      // Try to find media by path directly first
+      try {
+        const media = await mediaService.getMediaByPath(`/${urlPath}`);
+        
+        if (media) {
+          // Get media stream using the ID
+          const mediaData = await mediaService.getMediaStream(media.id);
+          
+          // Set content type and cache headers
+          reply.header('Content-Type', mediaData.contentType);
+          reply.header('Cache-Control', 'public, max-age=86400');
+          
+          // Stream the file
+          return reply.send(mediaData.stream);
+        }
+      } catch (pathErr) {
+        fastify.log.debug(`Path-based lookup failed for ${urlPath}: ${pathErr.message}`);
+      }
+      
+      // If path lookup failed, try base64 encoding
+      try {
+        // Convert the path to a base64 ID
+        const id = Buffer.from('/' + urlPath).toString('base64');
+        
+        // Try to find the media by this ID
+        const media = await mediaService.getMediaById(id);
+        
+        if (media) {
+          // Get media stream using the ID
+          const mediaData = await mediaService.getMediaStream(media.id);
+          
+          // Set content type
+          reply.header('Content-Type', mediaData.contentType);
+          reply.header('Cache-Control', 'public, max-age=86400');
+          
+          // Stream the file
+          return reply.send(mediaData.stream);
+        }
+      } catch (b64Err) {
+        fastify.log.debug(`Base64 lookup failed for ${urlPath}: ${b64Err.message}`);
+      }
+      
+      // If we get here, the file was not found
+      reply.code(404).send({ error: 'Media file not found' });
+    } catch (err) {
+      fastify.log.error(`Failed to fetch media file ${request.url}:`, err);
+      reply.code(500).send({ error: 'Internal server error while fetching media' });
+    }
+  });
+
   // Serve the frontend app
   fastify.get('/', async (request, reply) => {
+    // Using sendFile with the correct path
     return reply.sendFile('index.html');
   });
 }

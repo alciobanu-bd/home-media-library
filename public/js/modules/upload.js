@@ -486,8 +486,18 @@ function uploadSingleFile(formData, progressCallback) {
                 
                 if (xhr.status >= 200 && xhr.status < 300) {
                     resolve(response);
+                } else if (xhr.status === 409) {
+                    // Duplicate file detected - silently use the existing file
+                    // without prompting the user
+                    console.log('Duplicate file detected, using existing file:', response.duplicate);
+                    resolve({
+                        success: true,
+                        message: 'Using existing file',
+                        file: response.duplicate,
+                        isDuplicate: true
+                    });
                 } else {
-                    // Standard error handling - no special duplicate handling
+                    // Standard error handling
                     const errorMessage = response.message || response.error || `Server error (${xhr.status})`;
                     reject(new Error(errorMessage));
                 }
