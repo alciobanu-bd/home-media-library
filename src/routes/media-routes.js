@@ -191,7 +191,7 @@ async function routes(fastify, options) {
     }
   });
 
-  // Serve media files from MongoDB GridFS - improved error handling with fix for double media path
+  // Serve media files from MongoDB GridFS - improved error handling with fix for chunked encoding issues
   fastify.get('/media/:id', async (request, reply) => {
     try {
       const { id } = request.params;
@@ -212,8 +212,30 @@ async function routes(fastify, options) {
         // Set cache headers for better performance
         reply.header('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
         
-        // Stream the file directly to the response
-        return reply.send(mediaData.stream);
+        // Set Content-Length header if available to help with chunked encoding
+        if (mediaData.length) {
+          reply.header('Content-Length', mediaData.length);
+        }
+        
+        // Prevent premature timeouts for large files
+        request.raw.setTimeout(60 * 60 * 1000); // 1 hour timeout
+        
+        // Handle client disconnect to avoid ERR_INCOMPLETE_CHUNKED_ENCODING
+        request.raw.on('close', () => {
+          if (mediaData.stream && mediaData.stream.destroy) {
+            mediaData.stream.destroy();
+          }
+        });
+        
+        // Stream the file directly to the response with proper error handling
+        reply.send(mediaData.stream);
+        
+        // Track completed responses for debugging
+        mediaData.stream.on('end', () => {
+          fastify.log.debug(`Successfully streamed file ${id}`);
+        });
+        
+        return reply;
       } catch (err) {
         if (err.message && err.message.includes('not found')) {
           fastify.log.warn(`Media file not found: ${id}`);
@@ -245,8 +267,25 @@ async function routes(fastify, options) {
           reply.header('Content-Type', mediaData.contentType);
           reply.header('Cache-Control', 'public, max-age=86400');
           
-          // Stream the file
-          return reply.send(mediaData.stream);
+          // Set Content-Length header if available
+          if (mediaData.length) {
+            reply.header('Content-Length', mediaData.length);
+          }
+          
+          // Prevent premature timeouts for large files
+          request.raw.setTimeout(60 * 60 * 1000); // 1 hour timeout
+          
+          // Handle client disconnect
+          request.raw.on('close', () => {
+            if (mediaData.stream && mediaData.stream.destroy) {
+              mediaData.stream.destroy();
+            }
+          });
+          
+          // Stream the file with proper error handling
+          reply.send(mediaData.stream);
+          
+          return reply;
         }
       } catch (pathErr) {
         fastify.log.debug(`Path-based lookup failed for ${urlPath}: ${pathErr.message}`);
@@ -268,8 +307,25 @@ async function routes(fastify, options) {
           reply.header('Content-Type', mediaData.contentType);
           reply.header('Cache-Control', 'public, max-age=86400');
           
+          // Set Content-Length header if available
+          if (mediaData.length) {
+            reply.header('Content-Length', mediaData.length);
+          }
+          
+          // Prevent premature timeouts for large files
+          request.raw.setTimeout(60 * 60 * 1000); // 1 hour timeout
+          
+          // Handle client disconnect
+          request.raw.on('close', () => {
+            if (mediaData.stream && mediaData.stream.destroy) {
+              mediaData.stream.destroy();
+            }
+          });
+          
           // Stream the file
-          return reply.send(mediaData.stream);
+          reply.send(mediaData.stream);
+          
+          return reply;
         }
       } catch (b64Err) {
         fastify.log.debug(`Base64 lookup failed for ${urlPath}: ${b64Err.message}`);

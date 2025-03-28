@@ -1,4 +1,4 @@
-import { formatFileSize, formatDate } from '../utils/helpers.js';
+import { formatFileSize, formatDate, getMediaResolution } from '../utils/helpers.js';
 import { insertSvg } from '../utils/svg-loader.js';
 
 /**
@@ -62,22 +62,42 @@ export function createMediaItem(item, options) {
     // Set thumbnail URL based on media type
     if (item.type === 'image') {
         thumbnail.src = `/media${item.path}`;
+        
+        // Add event to calculate resolution when the image loads
+        thumbnail.addEventListener('load', function() {
+            // Only update if the dimensions container exists and is empty
+            const dimensionsContainer = mediaItem.querySelector('.media-dimensions');
+            if (dimensionsContainer && !dimensionsContainer.textContent) {
+                dimensionsContainer.textContent = `${this.naturalWidth} × ${this.naturalHeight}`;
+            }
+        });
     } else {
         thumbnail.src = '/public/img/video-placeholder.svg';
     }
     thumbnail.alt = item.name;
     thumbnailContainer.appendChild(thumbnail);
     
+    // Add resolution indicator - using helper function from utils/helpers.js
+    const resolution = getMediaResolution(item);
+    
+    // Always create the resolution overlay, even if resolution is not yet available
+    const dimensionsOverlay = document.createElement('div');
+    dimensionsOverlay.className = 'media-dimensions-overlay';
+    const dimensions = document.createElement('span');
+    dimensions.className = 'media-dimensions';
+    
+    if (resolution) {
+        dimensions.textContent = resolution;
+    }
+    
+    dimensionsOverlay.appendChild(dimensions);
+    thumbnailContainer.appendChild(dimensionsOverlay);
+    
     // Create media info container
     const mediaInfo = document.createElement('div');
     mediaInfo.className = 'media-info';
     
-    const mediaName = document.createElement('div');
-    mediaName.className = 'media-name';
-    mediaName.textContent = item.name;
-    mediaInfo.appendChild(mediaName);
-    
-    // Create actions row
+    // Directly create actions row instead of adding media name element
     const actionsRow = document.createElement('div');
     actionsRow.className = 'media-actions-row';
     
@@ -88,12 +108,14 @@ export function createMediaItem(item, options) {
     // Format data for display
     const fileSize = formatFileSize(item.size);
     const dateCreated = formatDate(item.created || item.modified);
-    const fileType = item.type.charAt(0).toUpperCase() + item.type.slice(1);
     
-    // Add type badge
+    // Get file extension for the badge instead of generic type
+    const fileExtension = item.name.split('.').pop().toUpperCase();
+    
+    // Add extension badge with appropriate type class
     const typeBadge = document.createElement('span');
     typeBadge.className = `media-type-badge media-type-${item.type}`;
-    typeBadge.textContent = fileType;
+    typeBadge.textContent = fileExtension;
     mediaMetadata.appendChild(typeBadge);
     
     // Add file size

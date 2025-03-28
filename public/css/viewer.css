@@ -124,6 +124,77 @@
     margin-top: 0; /* Remove top margin since icon and title will be above */
 }
 
+/* Enhanced metadata panel styling */
+.metadata-section h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 18px;
+    word-break: break-word;
+    color: #fff;
+}
+
+.metadata-group {
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.metadata-group:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.metadata-group h4 {
+    font-size: 15px;
+    margin-bottom: 12px;
+    color: rgba(255, 255, 255, 0.9);
+    font-weight: 500;
+}
+
+.metadata-row {
+    display: flex;
+    margin-bottom: 8px;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.metadata-label {
+    flex: 1;
+    color: rgba(255, 255, 255, 0.6);
+    font-weight: normal;
+}
+
+.metadata-value {
+    flex: 2;
+    color: #fff;
+    word-break: break-word;
+}
+
+.metadata-note {
+    font-size: 12px;
+    font-style: italic;
+    color: rgba(255, 255, 255, 0.5);
+    margin-top: 8px;
+}
+
+.metadata-link {
+    color: #3498db;
+    text-decoration: none;
+}
+
+.metadata-link:hover {
+    text-decoration: underline;
+}
+
+.file-id, .file-hash {
+    font-family: monospace;
+    font-size: 11px;
+    background-color: rgba(0, 0, 0, 0.2);
+    padding: 2px 4px;
+    border-radius: 2px;
+    user-select: all; /* Allow selecting the entire text with one click */
+}
+
 /* Title styling */
 .metadata-section h3 {
     margin-top: 0;

@@ -4,8 +4,20 @@
 require('dotenv').config();
 
 const fastify = require('fastify')({
-  logger: true
+  logger: true,
+  // Configure server timeouts
+  connectionTimeout: 300000, // 5 minutes
+  keepAliveTimeout: 300000, // 5 minutes
+  maxRequestsPerSocket: 0, // Unlimited requests per socket
+  // Add streaming configuration
+  http: {
+    disableRequestLogging: true, // Disable full request logging to avoid memory issues
+  },
+  // Add plugins for stream handling
+  return503OnClosing: true, // Return 503 when server is closing
+  ignoreTrailingSlash: true, // Ignore trailing slashes in URLs
 });
+
 const path = require('path');
 const mediaService = require('./services/media-service');
 const mongodb = require('./db/mongodb');
@@ -32,6 +44,18 @@ fastify.register(require('@fastify/static'), {
 // Register routes
 fastify.register(require('./routes/media-routes'));
 
+// Add global error handler for streams
+fastify.addHook('onRequest', (request, reply, done) => {
+  // On client disconnect, handle properly to avoid incomplete streaming
+  request.raw.on('close', () => {
+    if (!reply.sent && !reply.raw.writableEnded) {
+      reply.raw.destroy();
+    }
+  });
+  
+  done();
+});
+
 // Add a catch-all handler to redirect any 404s to the main app
 fastify.setNotFoundHandler((request, reply) => {
   // For API routes, return 404 JSON response
@@ -45,7 +69,6 @@ fastify.setNotFoundHandler((request, reply) => {
   }
   
   // For all other routes, serve the index.html (for SPA)
-  const filePath = path.join(__dirname, '../public/index.html');
   return reply.sendFile('index.html');
 });
 
@@ -59,13 +82,22 @@ const start = async () => {
     await mediaService.init();
     
     // Start listening on port 3000 or whatever is in the environment variable
-    await fastify.listen({ port: process.env.PORT || 3000, host: '0.0.0.0' });
+    await fastify.listen({ 
+      port: process.env.PORT || 3000, 
+      host: '0.0.0.0',
+    });
+    
     fastify.log.info(`Server is running on ${fastify.server.address().port}`);
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);
   }
 };
+
+// Add proper error handling for unhandled promise rejections
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled promise rejection:', err);
+});
 
 // Graceful shutdown
 process.on('SIGINT', async () => {

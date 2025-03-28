@@ -215,10 +215,18 @@ class MediaService {
 
       const bucket = mongodb.getBucket();
       const downloadStream = bucket.openDownloadStream(new ObjectId(id));
-
+      
+      // Add error handler to the stream
+      downloadStream.on('error', (err) => {
+        console.error(`Stream error for ID ${id}:`, err);
+      });
+      
+      // Return additional metadata for better handling
       return {
         stream: downloadStream,
-        contentType: await this.getMediaContentType(id)
+        contentType: file.contentType || 'application/octet-stream',
+        length: file.length, // Pass the file size for Content-Length header
+        filename: file.filename
       };
     } catch (err) {
       console.error(`Enhanced error handling in getMediaStream for ID ${id}:`, err);
@@ -279,9 +287,10 @@ class MediaService {
         };
       }
       
-      // Continue with the rest of the upload process only if no duplicate was found
+      // Process metadata and extract dimensions if possible
       let creationDate = null;
       let exifMetadata = null;
+      let dimensions = { width: null, height: null };
 
       if (metadata) {
         try {
@@ -289,6 +298,20 @@ class MediaService {
           console.log(`Processing metadata for ${filename}:`, metaObj);
 
           exifMetadata = metaObj.exif || {};
+          
+          // Extract image dimensions from EXIF data if available
+          if (fileData.mimetype.startsWith('image/')) {
+            // Try to find width and height from various possible fields
+            if (metaObj.exif) {
+              const exif = metaObj.exif;
+              dimensions.width = exif.PixelXDimension || exif.imageWidth || exif.width || null;
+              dimensions.height = exif.PixelYDimension || exif.imageHeight || exif.height || null;
+            }
+          } else if (fileData.mimetype.startsWith('video/')) {
+            // Extract video dimensions if available
+            dimensions.width = metaObj.width || metaObj.videoWidth || null;
+            dimensions.height = metaObj.height || metaObj.videoHeight || null;
+          }
 
           if (metaObj.dateTimeOriginal) {
             creationDate = new Date(metaObj.dateTimeOriginal);
@@ -328,6 +351,7 @@ class MediaService {
         creationDate = new Date();
       }
 
+      // Include dimensions in the metadata
       const mongoMetadata = {
         originalName: fileData.filename,
         uploadedAt: new Date(),
@@ -335,6 +359,8 @@ class MediaService {
         exif: exifMetadata || {},
         fileType: fileType,
         fileHash: fileHash, // Always store hash for future duplicate checking
+        width: dimensions.width,
+        height: dimensions.height,
         ...(metadata || {})
       };
 

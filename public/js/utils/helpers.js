@@ -98,3 +98,63 @@ export function isMobileDevice() {
             (navigator.maxTouchPoints > 0) || 
             (navigator.msMaxTouchPoints > 0);
 }
+
+/**
+ * Extract resolution string from media item
+ * 
+ * @param {Object} item - Media item
+ * @returns {string|null} - Formatted resolution or null if not available
+ */
+export function getMediaResolution(item) {
+    if (!item) return null;
+    
+    // Enhanced resolution extraction logic that handles more edge cases
+    
+    // First check direct properties on the item
+    if (item.width && item.height) {
+        return `${item.width} × ${item.height}`;
+    }
+    
+    // Check metadata object
+    if (item.metadata) {
+        const metadata = item.metadata;
+        
+        // Direct width/height in metadata
+        if (metadata.width && metadata.height) {
+            return `${metadata.width} × ${metadata.height}`;
+        }
+        
+        // Check EXIF data with various naming conventions
+        const exif = metadata.exif || {};
+        
+        // Standard EXIF dimension fields
+        if (exif.imageWidth && exif.imageHeight) {
+            return `${exif.imageWidth} × ${exif.imageHeight}`;
+        }
+        
+        if (exif.PixelXDimension && exif.PixelYDimension) {
+            return `${exif.PixelXDimension} × ${exif.PixelYDimension}`;
+        }
+        
+        // Try various other field names
+        const dimensionFields = [
+            ['width', 'height'],
+            ['Width', 'Height'],
+            ['ExifImageWidth', 'ExifImageHeight']
+        ];
+        
+        for (const [widthField, heightField] of dimensionFields) {
+            // Check in exif metadata
+            if (exif[widthField] && exif[heightField]) {
+                return `${exif[widthField]} × ${exif[heightField]}`;
+            }
+            
+            // Check in base metadata
+            if (metadata[widthField] && metadata[heightField]) {
+                return `${metadata[widthField]} × ${metadata[heightField]}`;
+            }
+        }
+    }
+    
+    return null;
+}

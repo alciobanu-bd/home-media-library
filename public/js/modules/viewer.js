@@ -119,6 +119,14 @@ export async function openMediaViewer(item, mediaItems = null, navigationContext
         img.alt = item.name;
         img.className = 'zoomable-image';
         
+        // Add event listener to update resolution once the image loads
+        img.addEventListener('load', () => {
+            const resolutionEl = mediaMetadataPanel.querySelector('.resolution-value');
+            if (resolutionEl && resolutionEl.textContent === 'Unknown') {
+                resolutionEl.textContent = `${img.naturalWidth} × ${img.naturalHeight}`;
+            }
+        });
+        
         imgWrapper.appendChild(img);
         mediaContainer.appendChild(imgWrapper);
         
@@ -129,6 +137,15 @@ export async function openMediaViewer(item, mediaItems = null, navigationContext
         video.src = `/media${item.path}`;
         video.controls = true;
         video.autoplay = false;
+        
+        // Add metadata event listener to update resolution when video metadata loads
+        video.addEventListener('loadedmetadata', () => {
+            const resolutionEl = mediaMetadataPanel.querySelector('.resolution-value');
+            if (resolutionEl && resolutionEl.textContent === 'Unknown') {
+                resolutionEl.textContent = `${video.videoWidth} × ${video.videoHeight}`;
+            }
+        });
+        
         mediaContainer.appendChild(video);
     }
     
